@@ -39,17 +39,25 @@ STATUS_ORDER=['LONG','SHORT','WATCH','NO TRADE']
 
 @st.cache_data(ttl=300)
 def get_top_crypto_pairs(limit=100):
-    r=requests.get(f'{BINANCE}/api/v3/ticker/24hr',timeout=15)
-    r.raise_for_status(); data=r.json()
-    rows=[{'symbol':x['symbol'],'coin':x['symbol'].replace('USDT',''),'volume':float(x['quoteVolume']),'price':float(x['lastPrice']),'change':float(x['priceChangePercent'])} for x in data if x['symbol'].endswith('USDT')]
-    rows.sort(key=lambda x:x['volume'], reverse=True)
-    return rows[:limit]
+    try:
+        r=requests.get(f'{BINANCE}/api/v3/ticker/24hr',timeout=20, headers={'User-Agent':'Mozilla/5.0'})
+        r.raise_for_status()
+        data=r.json()
+        rows=[{'symbol':x['symbol'],'coin':x['symbol'].replace('USDT',''),'volume':float(x.get('quoteVolume',0)),'price':float(x.get('lastPrice',0)),'change':float(x.get('priceChangePercent',0))} for x in data if x.get('symbol','').endswith('USDT')]
+        rows.sort(key=lambda x:x['volume'], reverse=True)
+        return rows[:limit]
+    except Exception:
+        return []
 
 @st.cache_data(ttl=60)
 def get_crypto_data(symbol='BTCUSDT', interval='1h', limit=250):
-    r=requests.get(f'{BINANCE}/api/v3/klines', params={'symbol':symbol,'interval':interval,'limit':limit}, timeout=15)
-    r.raise_for_status(); data=r.json()
-    if not data or isinstance(data, dict): return pd.DataFrame()
+    try:
+        r=requests.get(f'{BINANCE}/api/v3/klines', params={'symbol':symbol,'interval':interval,'limit':limit}, timeout=20, headers={'User-Agent':'Mozilla/5.0'})
+        r.raise_for_status()
+        data=r.json()
+        if not data or isinstance(data, dict): return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
     df=pd.DataFrame(data, columns=['timestamp','open','high','low','close','volume','close_time','qa_vol','trades','taker_buy_base','taker_buy_quote','ignore'])
     for c in ['open','high','low','close','volume']: df[c]=df[c].astype(float)
     df['timestamp']=pd.to_datetime(df['timestamp'], unit='ms'); df.set_index('timestamp', inplace=True)
@@ -58,7 +66,8 @@ def get_crypto_data(symbol='BTCUSDT', interval='1h', limit=250):
 @st.cache_data(ttl=600)
 def get_fear_greed():
     try:
-        r=requests.get(FG_URL, params={'limit':1,'format':'json'}, timeout=10, headers={'User-Agent':'Mozilla/5.0'})
+        r=requests.get(FG_URL, params={'limit':1,'format':'json'}, timeout=12, headers={'User-Agent':'Mozilla/5.0'})
+        r.raise_for_status()
         d=r.json()['data'][0]
         return int(d['value']), d['value_classification']
     except:
@@ -67,7 +76,8 @@ def get_fear_greed():
 @st.cache_data(ttl=600)
 def get_vix():
     try:
-        r=requests.get(VIX_YF, params={'range':'1d','interval':'1d'}, timeout=10, headers={'User-Agent':'Mozilla/5.0'})
+        r=requests.get(VIX_YF, params={'range':'1d','interval':'1d'}, timeout=12, headers={'User-Agent':'Mozilla/5.0'})
+        r.raise_for_status()
         meta=r.json()['chart']['result'][0]['meta']
         return meta.get('regularMarketPrice')
     except:
@@ -187,7 +197,9 @@ def render_chart(df, row, interval='1h'):
 def main():
     st.markdown('<div class="jarvis-hero"><div class="jarvis-title"><span style="font-size:1.15em;line-height:1">₿</span><span style="padding:0 14px;white-space:nowrap">Cripto Opportunity</span><span style="font-size:1.15em;line-height:1">Ξ</span></div><div class="jarvis-sub">Grafico chiaro e professionale · entry/SL/TP visualizzati · lettura del motore spiegata</div></div>', unsafe_allow_html=True)
     fg_val, fg_lbl = get_fear_greed(); vix_val = get_vix(); top = get_top_crypto_pairs(100)
-    if not top: st.stop()
+    if not top:
+        st.error('Impossibile caricare i dati di mercato in questo momento. Riprova più tardi.')
+        st.stop()
     big25, alt75 = top[:25], top[25:100]
     stablecoins = {'USDT','USDC','DAI','FDUSD','TUSD','USDE','PYUSD','FRAX','LUSD','GUSD','USDD','USDP','USTC','EURS','EURC','RLUSD','BUSD','USD1'}
     allowed_paired = {'EURUSDT'}
